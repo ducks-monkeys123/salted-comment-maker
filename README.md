@@ -7,4 +7,6 @@ Enter each salted comment and the name of who said it. The page makes:
 
 Numbering is automatic, so adding, removing or reordering comments renumbers everything. Download pages one at a time or all together as a ZIP.
 
+The list is kept in your browser, and you can also **Save as CSV** to keep it as a file on your computer and **Open CSV** to load it back. The CSV has three columns: Number, Salted comment, Name.
+
 `index.html` is self-contained: the background and fonts are built in. `background.png` is the original background image, kept for reference.

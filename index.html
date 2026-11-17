@@ -29,6 +29,9 @@
   button.ghost:disabled { opacity: .35; cursor: default; }
   button.danger { color: #b3261e; }
   .add { width: 100%; padding: 12px; }
+  .filebar { display: flex; gap: 8px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+  .filebar button { padding: 7px 12px; }
+  .filebar .spacer { flex: 1; }
   .hint { font-size: 13px; color: #5b7690; margin: 10px 0 0; font-weight: 400; }
   .pages { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 18px; }
   .page { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
@@ -51,7 +54,14 @@
     <div id="entries"></div>
     <button class="add" id="add">+ Add salted comment</button>
     <p class="hint">Numbers update automatically when you add, remove or reorder. Your list is saved in this browser.</p>
-    <p class="hint"><button class="ghost danger" id="clearAll">Clear all</button></p>
+    <div class="filebar">
+      <button class="ghost" id="saveCsv">Save as CSV</button>
+      <button class="ghost" id="openCsv">Open CSV</button>
+      <input type="file" id="csvFile" accept=".csv,text/csv" hidden>
+      <span class="spacer"></span>
+      <button class="ghost danger" id="clearAll">Clear all</button>
+    </div>
+    <p class="hint" id="csvMsg"></p>
   </section>
   <section>
     <div class="pages" id="pages"></div>
@@ -311,6 +321,56 @@ https://github.com/nodeca/pako/blob/main/LICENSE
     const zip = new JSZip();
     for (const p of pageList) zip.file(p.file, await new Promise(r => p.canvas.toBlob(r, 'image/png')));
     downloadBlob(await zip.generateAsync({ type: 'blob' }), 'Salted Comments.zip');
+  });
+
+  // ---------- CSV save / open ----------
+  const csvMsg = document.getElementById('csvMsg');
+  const csvCell = v => '"' + String(v).replace(/"/g, '""') + '"';
+  document.getElementById('saveCsv').addEventListener('click', () => {
+    const rows = [['Number', 'Salted comment', 'Name']];
+    items.filter(it => it.text.trim() || it.name.trim()).forEach((it, i) => rows.push([i + 1, it.text, it.name]));
+    if (rows.length === 1) { csvMsg.textContent = 'Nothing to save yet.'; return; }
+    const csv = '\uFEFF' + rows.map(r => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+    const d = new Date(), pad = n => String(n).padStart(2, '0');
+    downloadBlob(new Blob([csv], { type: 'text/csv;charset=utf-8' }), `Salted Comments ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.csv`);
+    csvMsg.textContent = `Saved ${rows.length - 1} salted comment${rows.length === 2 ? '' : 's'}.`;
+  });
+  function parseCsv(text) {
+    const rows = []; let row = [], cell = '', q = false;
+    text = text.replace(/^\uFEFF/, '');
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (q) {
+        if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else q = false; }
+        else cell += c;
+      } else if (c === '"') q = true;
+      else if (c === ',') { row.push(cell); cell = ''; }
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && text[i + 1] === '\n') i++;
+        row.push(cell); rows.push(row); row = []; cell = '';
+      } else cell += c;
+    }
+    if (cell !== '' || row.length) { row.push(cell); rows.push(row); }
+    return rows.filter(r => r.some(c => c.trim() !== ''));
+  }
+  const csvFile = document.getElementById('csvFile');
+  document.getElementById('openCsv').addEventListener('click', () => csvFile.click());
+  csvFile.addEventListener('change', async () => {
+    const f = csvFile.files[0]; csvFile.value = '';
+    if (!f) return;
+    let rows = parseCsv(await f.text());
+    if (!rows.length) { csvMsg.textContent = 'That file has no salted comments in it.'; return; }
+    // find columns from the header if there is one; otherwise assume [number?, comment, name]
+    const head = rows[0].map(h => h.trim().toLowerCase());
+    let ci = head.findIndex(h => h.includes('comment')), ni = head.findIndex(h => h === 'name' || h.includes('name'));
+    if (ci >= 0) rows = rows.slice(1);
+    else if (rows[0].length >= 3) { ci = 1; ni = 2; } else { ci = 0; ni = 1; }
+    const loaded = rows.map(r => ({ text: (r[ci] || '').trim(), name: ni >= 0 ? (r[ni] || '').trim() : '' })).filter(it => it.text || it.name);
+    if (!loaded.length) { csvMsg.textContent = 'That file has no salted comments in it.'; return; }
+    const hasCurrent = items.some(it => it.text.trim() || it.name.trim());
+    if (hasCurrent && !window.confirm(`Replace the current list with the ${loaded.length} salted comments from "${f.name}"?`)) return;
+    items = loaded; renderEditor(); changed(true);
+    csvMsg.textContent = `Opened ${loaded.length} salted comment${loaded.length === 1 ? '' : 's'} from "${f.name}".`;
   });
 
   let timer;
